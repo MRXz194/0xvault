@@ -6,28 +6,16 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "check-types": "turbo run check-types",
-    "prepare": "husky"
+    "check-types": "turbo run check-types"
   },
   "devDependencies": {
     "prettier": "^3.7.4",
     "turbo": "^2.6.3",
-    "typescript": "5.9.2",
-    "husky": "^9.1.7",
-    "lint-staged": "^15.2.10"
+    "typescript": "5.9.2"
   },
   "packageManager": "pnpm@9.0.0",
   "engines": {
     "node": ">=18"
-  },
-  "lint-staged": {
-    "*.{ts,tsx,js,jsx}": [
-      "pnpm -w eslint --fix --max-warnings 0",
-      "pnpm -w prettier --write"
-    ],
-    "*.{md,css,scss,json}": [
-      "pnpm -w prettier --write"
-    ]
   },
   "prettier": {
     "semi": true,
