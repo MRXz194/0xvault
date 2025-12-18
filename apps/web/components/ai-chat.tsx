@@ -70,8 +70,9 @@ export function AIChat() {
             onChange={(e) => setInput(e.target.value)}
             placeholder="Ask about crypto..."
             disabled={status !== 'ready'}
+            aria-label="Chat input"
           />
-          <Button type="submit" size="icon" disabled={status !== 'ready'}>
+          <Button type="submit" size="icon" disabled={status !== 'ready'} aria-label="Send message">
             <Send className="w-4 h-4" />
           </Button>
         </form>

@@ -5,6 +5,7 @@ export interface BaseMetadata {
   name: string;
   note?: string;
   isFavorite?: boolean;
+  deletedAt?: string; // ISO timestamp when soft-deleted
 }
 
 export interface CryptoMetadata extends BaseMetadata {
@@ -18,12 +19,21 @@ export interface LoginMetadata extends BaseMetadata {
   url?: string;
 }
 
+export interface NoteMetadata extends BaseMetadata {
+  content?: string;
+}
+
+// Fallback an toàn cho các loại metadata chưa được mô tả chi tiết
+export type UnknownMetadata = BaseMetadata & Record<string, unknown>;
+
+export type VaultItemMetadata = CryptoMetadata | LoginMetadata | NoteMetadata | UnknownMetadata;
+
 // Mapping với bảng vault_items
 export interface VaultItem {
   id: string;
   user_id: string;
   type: VaultItemType;
-  metadata: CryptoMetadata | LoginMetadata | any; // Dùng 'any' để mở rộng nếu cần
+  metadata: VaultItemMetadata;
   encrypted_blob: string;
   created_at: string;
 }

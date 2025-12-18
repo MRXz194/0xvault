@@ -1,101 +1,163 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { generateSalt, deriveKeysFromPassword } from '@/lib/supabase/crypto';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
+import { useToast } from '@/hooks/use-toast';
+import { Loader2, UserPlus, Shield } from 'lucide-react';
 
 export default function RegisterPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
   const router = useRouter();
   const supabase = createClient();
+  const { toast } = useToast();
 
-  const handleRegister = async () => {
-    if (!email || !password) return alert('Please fill in all fields'); // Vui lòng điền đủ
-    
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Validate mật khẩu khớp nhau
+    if (password !== confirmPassword) {
+      toast({
+        variant: "destructive",
+        title: "Passwords do not match",
+        description: "Please check your confirmation password.",
+      });
+      return;
+    }
+
+    // Validate độ dài mật khẩu
+    if (password.length < 6) {
+      toast({
+        variant: "destructive",
+        title: "Password too weak",
+        description: "Password must be at least 6 characters long.",
+      });
+      return;
+    }
+
     setLoading(true);
+
     try {
-      // 1. Đăng ký User với Supabase Auth
-      // (Pass gửi lên đây chỉ để login, còn bảo mật thật nằm ở bảng user_security)
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          // Redirect về callback và quay lại trang đăng nhập sau khi xác thực email
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=/login`,
+        },
       });
 
-      if (authError || !authData.user) {
-        throw new Error(authError?.message || 'Registration failed'); // Đăng ký thất bại
+      if (error) {
+        toast({
+          variant: "destructive",
+          title: "Registration failed",
+          description: error.message,
+        });
+        return;
       }
 
-      // 2. Bắt đầu quy trình Zero-Knowledge (Mã hóa tại Client)
-      const salt = generateSalt(); // Tạo muối ngẫu nhiên
-      const { authHash } = await deriveKeysFromPassword(password, salt); // Tạo Hash login
-
-      console.log("Saving Security Data...", { salt, authHash });
-
-      // 3. Lưu Salt & Hash vào bảng user_security
-      const { error: dbError } = await supabase
-        .from('user_security')
-        .insert({
-          user_id: authData.user.id, // Link với user vừa tạo
-          salt: salt,
-          auth_hash: authHash
+      // Logic kiểm tra xem có cần confirm email không
+      // Nếu user được tạo (data.user) nhưng chưa có session (data.session) => Cần confirm email
+      if (data?.user && !data?.session) {
+        toast({
+          title: "Registration successful!",
+          description: "Please check your email (including Spam folder) to verify your account.",
+          duration: 6000, 
         });
+        // Chuyển về trang login để người dùng đợi xác thực
+        router.push('/login');
+      } else {
+        // Trường hợp confirm email bị tắt trên Supabase (vào dashboard luôn)
+        toast({
+          title: "Welcome!",
+          description: "Your account has been created successfully.",
+        });
+        router.push('/dashboard');
+      }
 
-      if (dbError) throw dbError;
-
-      alert('Registration successful! Please check your email to confirm (if enabled) or log in now.');
-      router.push('/'); // Chuyển về trang chủ hoặc Login
-
-    } catch (error: any) {
-      console.error(error);
-      alert(error.message || 'An error occurred'); // Có lỗi xảy ra
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "System Error",
+        description: "An unexpected error occurred. Please try again.",
+      });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex h-screen items-center justify-center bg-gray-100 dark:bg-zinc-950 p-4">
-      <Card className="w-full max-w-[400px] shadow-lg">
-        <CardHeader>
-          <CardTitle className="text-center text-2xl font-bold">0xVault Register</CardTitle>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-zinc-950 p-4">
+      <Card className="w-full max-w-md shadow-lg border-t-4 border-t-primary">
+        <CardHeader className="space-y-1 text-center">
+          <div className="flex justify-center mb-2">
+            <div className="p-3 bg-primary/10 rounded-full">
+              <Shield className="w-8 h-8 text-primary" />
+            </div>
+          </div>
+          <CardTitle className="text-2xl font-bold">Create Account</CardTitle>
+          <CardDescription>
+            Start securing your assets with 0xVault
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input 
-              id="email"
-              type="email" 
-              placeholder="user@example.com" 
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="pass">Master Password</Label>
-            <Input 
-              id="pass"
-              type="password" 
-              placeholder="Enter your strongest password..." 
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <p className="text-[11px] text-muted-foreground text-red-500">
-              ⚠️ We do not store your master password. If you forget it, your data will be lost forever.
+        <form onSubmit={handleRegister}>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input 
+                id="email" 
+                type="email" 
+                placeholder="name@example.com" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input 
+                id="password" 
+                type="password" 
+                placeholder="••••••••" 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirm-password">Confirm Password</Label>
+              <Input 
+                id="confirm-password" 
+                type="password" 
+                placeholder="••••••••" 
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+              />
+            </div>
+          </CardContent>
+          <CardFooter className="flex flex-col gap-4">
+            <Button className="w-full" type="submit" disabled={loading}>
+              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
+              {loading ? 'Creating account...' : 'Create Account'}
+            </Button>
+            <p className="text-sm text-center text-muted-foreground">
+              Already have an account?{' '}
+              <Link href="/login" className="text-primary hover:underline font-medium">
+                Sign In
+              </Link>
             </p>
-          </div>
-        </CardContent>
-        <CardFooter>
-          <Button className="w-full" onClick={handleRegister} disabled={loading}>
-            {loading ? 'Encrypting & Creating Wallet...' : 'Create Account'}
-          </Button>
-        </CardFooter>
+          </CardFooter>
+        </form>
       </Card>
     </div>
   );

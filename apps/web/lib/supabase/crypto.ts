@@ -1,8 +1,7 @@
-
 // 1. Hàm tạo chuỗi ngẫu nhiên (Salt)
 export function generateSalt(length = 16): string {
     const array = new Uint8Array(length);
-    window.crypto.getRandomValues(array);
+    globalThis.crypto.getRandomValues(array);
     // Chuyển sang Hex string để lưu DB
     return Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
   }
@@ -18,7 +17,7 @@ export function generateSalt(length = 16): string {
   // Đây là bước quan trọng nhất để chống Brute-force
   async function getKeyMaterial(password: string): Promise<CryptoKey> {
     const enc = new TextEncoder();
-    return window.crypto.subtle.importKey(
+    return globalThis.crypto.subtle.importKey(
       "raw",
       enc.encode(password),
       { name: "PBKDF2" },
@@ -34,7 +33,7 @@ export function generateSalt(length = 16): string {
   
     // a. Tạo Encryption Key (Dùng để mã hóa ví - Giữ lại RAM, KHÔNG gửi server)
     // Dùng thuật toán AES-GCM, dài 256 bit
-    const encryptionKey = await window.crypto.subtle.deriveKey(
+    const encryptionKey = await globalThis.crypto.subtle.deriveKey(
       {
         name: "PBKDF2",
         salt: salt,
@@ -49,8 +48,8 @@ export function generateSalt(length = 16): string {
   
     // b. Tạo Auth Hash (Dùng để Login - Gửi lên Server)
     // Chúng ta "băm" cái key trên thêm 1 lần nữa để tạo ra chuỗi hash khác biệt
-    const encryptionKeyExported = await window.crypto.subtle.exportKey("raw", encryptionKey);
-    const authHashBuffer = await window.crypto.subtle.digest("SHA-256", encryptionKeyExported);
+    const encryptionKeyExported = await globalThis.crypto.subtle.exportKey("raw", encryptionKey);
+    const authHashBuffer = await globalThis.crypto.subtle.digest("SHA-256", encryptionKeyExported);
     
     // Chuyển Auth Hash sang string để lưu DB
     const authHash = Array.from(new Uint8Array(authHashBuffer))
@@ -62,10 +61,10 @@ export function generateSalt(length = 16): string {
 
 // 5. Hàm Mã hóa dữ liệu (Text -> AES-GCM -> "IV:EncryptedData")
 export async function encryptData(text: string, key: CryptoKey): Promise<string> {
-    const iv = window.crypto.getRandomValues(new Uint8Array(12)); // IV chuẩn 12 bytes cho GCM
+    const iv = globalThis.crypto.getRandomValues(new Uint8Array(12)); // IV chuẩn 12 bytes cho GCM
     const encodedText = new TextEncoder().encode(text);
   
-    const encryptedContent = await window.crypto.subtle.encrypt(
+    const encryptedContent = await globalThis.crypto.subtle.encrypt(
       { name: "AES-GCM", iv: iv },
       key,
       encodedText
@@ -88,7 +87,7 @@ export async function encryptData(text: string, key: CryptoKey): Promise<string>
       const iv = new Uint8Array(ivHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
       const data = new Uint8Array(dataHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
   
-      const decryptedContent = await window.crypto.subtle.decrypt(
+      const decryptedContent = await globalThis.crypto.subtle.decrypt(
         { name: "AES-GCM", iv: iv },
         key,
         data

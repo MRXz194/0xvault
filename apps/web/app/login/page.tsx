@@ -1,108 +1,170 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { deriveKeysFromPassword } from '@/lib/supabase/crypto'; // Import hàm crypto
-import { useVaultStore } from '@/lib/store'; // Import kho chứa RAM
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
+import { useToast } from '@/hooks/use-toast'; 
+import { Loader2, LogIn, ShieldCheck } from 'lucide-react';
+import { useVaultStore } from '@/lib/store';
+import { generateSalt, deriveKeysFromPassword } from '@/lib/supabase/crypto';
 
 export default function LoginPage() {
+  const router = useRouter();
+  const supabase = createClient();
+  const { toast } = useToast();
+  const { setMasterKey } = useVaultStore();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
-  const supabase = createClient();
-  const setMasterKey = useVaultStore((state) => state.setMasterKey);
 
-  const handleLogin = async () => {
-    if (!email || !password) return alert('Please enter email and password');
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
     setLoading(true);
 
     try {
-      // 1. Đăng nhập Auth cơ bản (để lấy quyền đọc DB)
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (authError || !authData.user) throw new Error('Incorrect email or password');
+      if (error) {
+        // Kiểm tra lỗi chưa confirm email từ Supabase
+        if (error.message.includes("Email not confirmed")) {
+          toast({
+            variant: "destructive",
+            title: "Account not activated",
+            description: "Please check your email to verify your account before logging in.",
+          });
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Login failed",
+            description: error.message,
+          });
+        }
+        return;
+      }
 
-      // 2. Lấy thông tin bảo mật (Salt & Hash) từ DB
-      // Nhờ RLS, user chỉ lấy được dòng của chính mình
-      const { data: securityData, error: secError } = await supabase
+      // Đăng nhập thành công -> derive master key và đảm bảo user_security tồn tại
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('No session after login');
+      }
+
+      // Lấy salt từ bảng user_security (hoặc khởi tạo mới nếu chưa có)
+      let saltHex: string;
+      let authHash: string | null = null;
+
+      const { data: secRow, error: secErr } = await supabase
         .from('user_security')
         .select('salt, auth_hash')
-        .eq('user_id', authData.user.id)
-        .single();
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-      if (secError || !securityData) {
-        throw new Error('Security data not found. Please register again.');
+      if (secErr && secErr.code !== 'PGRST116') {
+        // Lỗi khác ngoài not-found
+        throw secErr;
       }
 
-      // 3. Tính toán lại Key từ Password nhập vào + Salt trong DB
-      console.log("Deriving keys...");
-      const { encryptionKey, authHash } = await deriveKeysFromPassword(password, securityData.salt);
-
-      // 4. Kiểm tra lần cuối: Hash tính ra có khớp với Hash trong DB không?
-      // (Bước này đảm bảo Password nhập vào chính là Master Password giải mã được dữ liệu)
-      if (authHash !== securityData.auth_hash) {
-        throw new Error('Critical Error: Password matches Auth but fails Decryption check!');
+      if (secRow?.salt) {
+        saltHex = secRow.salt;
+      } else {
+        saltHex = generateSalt();
       }
 
-      // 5. LƯU CHÌA KHÓA VÀO RAM (Zustand)
-      setMasterKey(encryptionKey);
-      
-      console.log("Unlock success! Key stored in memory.");
-      router.push('/dashboard'); // Chuyển hướng vào két sắt
+      const derived = await deriveKeysFromPassword(password, saltHex);
+      authHash = derived.authHash;
 
-    } catch (error: any) {
-      console.error(error);
-      alert(error.message || 'Login failed');
+      // Nếu chưa có bản ghi user_security -> tạo mới
+      if (!secRow) {
+        const { error: insertErr } = await supabase.from('user_security').insert({
+          user_id: user.id,
+          salt: saltHex,
+          auth_hash: authHash,
+        });
+        if (insertErr) throw insertErr;
+      }
+
+      // Lưu master key trong RAM
+      setMasterKey(derived.encryptionKey);
+
+      toast({
+        title: 'Login successful',
+        description: 'Vault unlocked on this device session.',
+      });
+
+      router.push('/dashboard');
+      router.refresh(); // Refresh để cập nhật session state cho các component server
+
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "System Error",
+        description: "An unexpected error occurred. Please try again.",
+      });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex h-screen items-center justify-center bg-gray-100 dark:bg-zinc-950 p-4">
-      <Card className="w-full max-w-[400px] shadow-lg">
-        <CardHeader>
-          <CardTitle className="text-center text-2xl font-bold">0xVault Login</CardTitle>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-zinc-950 p-4">
+      <Card className="w-full max-w-md shadow-lg border-t-4 border-t-primary">
+        <CardHeader className="space-y-1 text-center">
+          <div className="flex justify-center mb-2">
+            <div className="p-3 bg-primary/10 rounded-full">
+              <ShieldCheck className="w-8 h-8 text-primary" />
+            </div>
+          </div>
+          <CardTitle className="text-2xl font-bold">Welcome Back</CardTitle>
+          <CardDescription>
+            Enter your credentials to access your Vault
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input 
-              id="email"
-              type="email" 
-              placeholder="user@example.com" 
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="pass">Master Password</Label>
-            <Input 
-              id="pass"
-              type="password" 
-              placeholder="Your master password..." 
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
-        </CardContent>
-        <CardFooter className="flex flex-col gap-2">
-          <Button className="w-full" onClick={handleLogin} disabled={loading}>
-            {loading ? 'Unlocking Vault...' : 'Unlock Vault'}
-          </Button>
-          <Button variant="link" className="text-xs" onClick={() => router.push('/register')}>
-            Don't have an account? Register
-          </Button>
-        </CardFooter>
+        <form onSubmit={handleLogin}>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input 
+                id="email" 
+                type="email" 
+                placeholder="name@example.com" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input 
+                id="password" 
+                type="password" 
+                placeholder="••••••••" 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+          </CardContent>
+          <CardFooter className="flex flex-col gap-4">
+            <Button className="w-full" type="submit" disabled={loading}>
+              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogIn className="mr-2 h-4 w-4" />}
+              {loading ? 'Signing in...' : 'Sign In'}
+            </Button>
+            <p className="text-sm text-center text-muted-foreground">
+              Don&apos;t have an account?{' '}
+              <Link href="/register" className="text-primary hover:underline font-medium">
+                Register
+              </Link>
+            </p>
+          </CardFooter>
+        </form>
       </Card>
     </div>
   );
