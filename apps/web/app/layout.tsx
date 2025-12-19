@@ -13,28 +13,8 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"),
-  title: {
-    default: "0xVault",
-    template: "%s | 0xVault",
-  },
+  title: "0xVault",
   description: "Zero-knowledge storage for your crypto assets.",
-  robots: {
-    index: true,
-    follow: true,
-  },
-  openGraph: {
-    type: "website",
-    url: "/",
-    title: "0xVault",
-    description: "Zero-knowledge storage for your crypto assets.",
-    siteName: "0xVault",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "0xVault",
-    description: "Zero-knowledge storage for your crypto assets.",
-  },
 };
 
 export const viewport: Viewport = {
